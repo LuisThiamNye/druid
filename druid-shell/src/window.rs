@@ -514,6 +514,10 @@ impl WindowBuilder {
         self.0.set_window_state(state);
     }
 
+    pub fn set_native_config(&mut self, native_config: backend::NativeWindowConfig) {
+        self.0.set_native_config(native_config)
+    }
+
     /// Attempt to construct the platform window.
     ///
     /// If this fails, your application should exit.

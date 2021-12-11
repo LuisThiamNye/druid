@@ -257,7 +257,7 @@ lazy_static! {
     pub static ref OPTIONAL_FUNCTIONS: OptionalFunctions = load_optional_functions();
 }
 
-pub(crate) const CLASS_NAME: &str = "druid";
+pub const CLASS_NAME: &str = "druid";
 
 /// Convenience macro for defining accelerator tables.
 #[macro_export]

@@ -57,7 +57,7 @@ const SHIFT_STATE_ALTGR: ShiftState = 2;
 const N_SHIFT_STATE: ShiftState = 4;
 
 /// Per-window keyboard state.
-pub(crate) struct KeyboardState {
+pub struct KeyboardState {
     hkl: HKL,
     // A map from (vk, is_shifted) to string val
     key_vals: HashMap<(VkCode, ShiftState), String>,
@@ -585,7 +585,7 @@ impl KeyboardState {
     /// The `hwnd` argument must be a valid `HWND`. Similarly, the `lparam` must be
     /// a valid `HKL` reference in the `WM_INPUTLANGCHANGE` message. Actual danger
     /// is likely low, though.
-    pub(crate) unsafe fn process_message(
+    pub unsafe fn process_message(
         &mut self,
         msg: UINT,
         wparam: WPARAM,

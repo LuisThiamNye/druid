@@ -17,7 +17,10 @@
 use crate::ext_event::{ExtEventHost, ExtEventSink};
 use crate::kurbo::{Point, Size};
 use crate::menu::MenuManager;
-use crate::shell::{Application, Error as PlatformError, WindowBuilder, WindowHandle, WindowLevel};
+use crate::shell::{
+    Application, Error as PlatformError, NativeApplicationConfig, NativeWindowConfig,
+    WindowBuilder, WindowHandle, WindowLevel,
+};
 use crate::widget::LabelText;
 use crate::win_handler::{AppHandler, AppState};
 use crate::window::WindowId;
@@ -37,6 +40,7 @@ pub struct AppLauncher<T> {
     l10n_resources: Option<(Vec<String>, String)>,
     delegate: Option<Box<dyn AppDelegate<T>>>,
     ext_event_host: ExtEventHost,
+    native_config: Option<NativeApplicationConfig>,
 }
 
 /// Defines how a windows size should be determined
@@ -64,6 +68,7 @@ pub struct WindowConfig {
     pub(crate) show_titlebar: Option<bool>,
     pub(crate) level: Option<WindowLevel>,
     pub(crate) state: Option<WindowState>,
+    pub(crate) native_config: Option<NativeWindowConfig>,
 }
 
 /// A description of a window to be instantiated.
@@ -145,6 +150,7 @@ impl<T: Data> AppLauncher<T> {
             l10n_resources: None,
             delegate: None,
             ext_event_host: ExtEventHost::new(),
+            native_config: None,
         }
     }
 
@@ -235,12 +241,21 @@ impl<T: Data> AppLauncher<T> {
         self.ext_event_host.make_sink()
     }
 
+    pub fn set_native_config(mut self, native_config: NativeApplicationConfig) -> Self {
+        self.native_config = Some(native_config);
+        self
+    }
+
     /// Build the windows and start the runloop.
     ///
     /// Returns an error if a window cannot be instantiated. This is usually
     /// a fatal error.
     pub fn launch(mut self, data: T) -> Result<(), PlatformError> {
-        let app = Application::new()?;
+        let app = if let Some(native_config) = self.native_config {
+            Application::from_native_config(native_config)
+        } else {
+            Application::new()
+        }?;
 
         let mut env = self
             .l10n_resources
@@ -282,6 +297,7 @@ impl Default for WindowConfig {
             transparent: None,
             level: None,
             state: None,
+            native_config: None,
         }
     }
 }
@@ -382,6 +398,12 @@ impl WindowConfig {
         self
     }
 
+    /// Set platform-specific configuration
+    pub fn set_native_config(mut self, native_config: NativeWindowConfig) -> Self {
+        self.native_config = Some(native_config);
+        self
+    }
+
     /// Apply this window configuration to the passed in WindowBuilder
     pub fn apply_to_builder(&self, builder: &mut WindowBuilder) {
         if let Some(resizable) = self.resizable {
@@ -416,6 +438,10 @@ impl WindowConfig {
 
         if let Some(min_size) = self.min_size {
             builder.set_min_size(min_size);
+        }
+
+        if let Some(native_config) = self.native_config {
+            builder.set_native_config(native_config);
         }
     }
 

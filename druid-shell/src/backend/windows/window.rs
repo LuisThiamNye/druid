@@ -99,6 +99,8 @@ pub(crate) struct WindowBuilder {
     position: Option<Point>,
     level: Option<WindowLevel>,
     state: window::WindowState,
+    hwnd: Option<HWND>,
+    dwExStyle: Option<DWORD>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -163,10 +165,36 @@ enum DeferredOp {
     ReleaseMouseCapture,
 }
 
+#[derive(PartialEq, Copy, Clone)]
+pub struct NativeWindowConfig {
+    hwnd: Option<HWND>,
+    dwExStyle: Option<DWORD>,
+}
+
+impl Default for NativeWindowConfig {
+    fn default() -> Self {
+        NativeWindowConfig {
+            hwnd: None,
+            dwExStyle: None,
+        }
+    }
+}
+
+impl NativeWindowConfig {
+    pub fn set_hwnd(mut self, hwnd: HWND) -> Self {
+        self.hwnd = Some(hwnd);
+        self
+    }
+    pub fn set_dwExStyle(mut self, dwExStyle: DWORD) -> Self {
+        self.dwExStyle = Some(dwExStyle);
+        self
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct WindowHandle {
     text: PietText,
-    state: Weak<WindowState>,
+    pub state: Weak<WindowState>,
 }
 
 impl PartialEq for WindowHandle {
@@ -218,13 +246,13 @@ enum IdleKind {
 
 /// This is the low level window state. All mutable contents are protected
 /// by interior mutability, so we can handle reentrant calls.
-struct WindowState {
+pub struct WindowState {
     hwnd: Cell<HWND>,
     scale: Cell<Scale>,
     area: Cell<ScaledArea>,
     invalid: RefCell<Region>,
     has_menu: Cell<bool>,
-    wndproc: Box<dyn WndProc>,
+    pub wndproc: Box<dyn WndProc>,
     idle_queue: Arc<Mutex<Vec<IdleKind>>>,
     timers: Arc<Mutex<TimerSlots>>,
     deferred_queue: RefCell<Vec<DeferredOp>>,
@@ -249,7 +277,7 @@ impl std::fmt::Debug for WindowState {
 }
 
 /// Generic handler trait for the winapi window procedure entry point.
-trait WndProc {
+pub trait WndProc {
     fn connect(&self, handle: &WindowHandle, state: WndState);
 
     fn cleanup(&self, hwnd: HWND);
@@ -270,12 +298,12 @@ struct MyWndProc {
 }
 
 /// The mutable state of the window.
-struct WndState {
+pub struct WndState {
     handler: Box<dyn WinHandler>,
     render_target: Option<DeviceContext>,
     dxgi_state: Option<DxgiState>,
     min_size: Option<Size>,
-    keyboard_state: KeyboardState,
+    pub keyboard_state: KeyboardState,
     // Stores a set of all mouse buttons that are currently holding mouse
     // capture. When the first mouse button is down on our window we enter
     // capture, and we hold it until the last mouse button is up.
@@ -1287,6 +1315,8 @@ impl WindowBuilder {
             position: None,
             level: None,
             state: window::WindowState::Restored,
+            hwnd: None,
+            dwExStyle: None,
         }
     }
 
@@ -1347,6 +1377,11 @@ impl WindowBuilder {
                 warn!("WindowLevel::Modal and WindowLevel::DropDown is currently unimplemented for Windows backend.");
             }
         }
+    }
+
+    pub fn set_native_config(&mut self, native_config: NativeWindowConfig) {
+        self.hwnd = native_config.hwnd;
+        self.dwExStyle = native_config.dwExStyle;
     }
 
     pub fn build(self) -> Result<WindowHandle, Error> {
@@ -1479,20 +1514,24 @@ impl WindowBuilder {
                 _ => (),
             };
 
-            let hwnd = create_window(
-                dwExStyle,
-                class_name.as_ptr(),
-                self.title.to_wide().as_ptr(),
-                dwStyle,
-                pos_x,
-                pos_y,
-                width,
-                height,
-                0 as HWND,
-                hmenu,
-                0 as HINSTANCE,
-                win,
-            );
+            let hwnd = if let Some(hwnd) = self.hwnd {
+                hwnd
+            } else {
+                create_window(
+                    self.dwExStyle.unwrap_or(dwExStyle),
+                    class_name.as_ptr(),
+                    self.title.to_wide().as_ptr(),
+                    dwStyle,
+                    pos_x,
+                    pos_y,
+                    width,
+                    height,
+                    0 as HWND,
+                    hmenu,
+                    0 as HINSTANCE,
+                    win,
+                )
+            };
             if hwnd.is_null() {
                 return Err(Error::NullHwnd);
             }
@@ -1698,6 +1737,24 @@ unsafe fn create_dxgi_state(
 type WindowLongPtr = winapi::shared::basetsd::LONG_PTR;
 #[cfg(target_arch = "x86")]
 type WindowLongPtr = LONG;
+
+pub type WinProcDispatch = unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT;
+
+pub fn invoke_window_proc(
+    hwnd: HWND,
+    msg: UINT,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> Option<LRESULT> {
+    unsafe {
+        let window_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const WindowState;
+        if window_ptr.is_null() {
+            None
+        } else {
+            (*window_ptr).wndproc.window_proc(hwnd, msg, wparam, lparam)
+        }
+    }
+}
 
 pub(crate) unsafe extern "system" fn win_proc_dispatch(
     hwnd: HWND,

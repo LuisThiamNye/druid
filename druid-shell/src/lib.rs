@@ -54,7 +54,7 @@ pub use raw_window_handle;
 mod util;
 
 mod application;
-mod backend;
+pub mod backend;
 mod clipboard;
 mod common_util;
 mod dialog;
@@ -72,6 +72,8 @@ pub mod platform;
 pub mod text;
 
 pub use application::{AppHandler, Application};
+pub use backend::application::{NativeApplicationConfig, WinProcDispatch};
+pub use backend::window::NativeWindowConfig;
 pub use clipboard::{Clipboard, ClipboardFormat, FormatId};
 pub use common_util::Counter;
 pub use dialog::{FileDialogOptions, FileInfo, FileSpec};

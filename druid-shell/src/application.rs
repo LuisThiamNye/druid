@@ -75,11 +75,17 @@ impl Application {
     ///
     /// [druid#771]: https://github.com/linebender/druid/issues/771
     pub fn new() -> Result<Application, Error> {
+        Application::from_native_config(backend::NativeApplicationConfig::default())
+    }
+
+    pub fn from_native_config(
+        native_config: backend::NativeApplicationConfig,
+    ) -> Result<Application, Error> {
         APPLICATION_CREATED
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .map_err(|_| Error::ApplicationAlreadyExists)?;
         util::claim_main_thread();
-        let backend_app = backend::Application::new()?;
+        let backend_app = backend::Application::from_native_config(native_config)?;
         let state = Rc::new(RefCell::new(State { running: false }));
         let app = Application { backend_app, state };
         GLOBAL_APP.with(|global_app| {

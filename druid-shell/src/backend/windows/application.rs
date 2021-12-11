@@ -45,10 +45,37 @@ use super::error::Error;
 use super::util::{self, FromWide, ToWide, CLASS_NAME, OPTIONAL_FUNCTIONS};
 use super::window::{self, DS_REQUEST_DESTROY};
 
+pub use window::WinProcDispatch;
+
 #[derive(Clone)]
 pub(crate) struct Application {
     state: Rc<RefCell<State>>,
     pub(crate) fonts: D2DLoadedFonts,
+}
+
+pub struct NativeApplicationConfig {
+    win_proc_dispatch: window::WinProcDispatch,
+}
+
+impl Default for NativeApplicationConfig {
+    fn default() -> Self {
+        NativeApplicationConfig {
+            win_proc_dispatch: window::win_proc_dispatch,
+        }
+    }
+}
+use winapi::shared::minwindef::*;
+impl NativeApplicationConfig {
+    pub fn set_win_proc_dispatch(
+        mut self,
+        make_win_proc_dispatch: fn(
+            fn(HWND, UINT, WPARAM, LPARAM) -> LRESULT,
+        ) -> window::WinProcDispatch,
+    ) -> Self {
+        self.win_proc_dispatch =
+            make_win_proc_dispatch(|a, b, c, d| unsafe { window::win_proc_dispatch(a, b, c, d) });
+        self
+    }
 }
 
 struct State {
@@ -61,7 +88,13 @@ static WINDOW_CLASS_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 impl Application {
     pub fn new() -> Result<Application, Error> {
-        Application::init()?;
+        Application::from_native_config(NativeApplicationConfig::default())
+    }
+
+    pub fn from_native_config(
+        native_config: NativeApplicationConfig,
+    ) -> Result<Application, Error> {
+        Application::init(native_config)?;
         let state = Rc::new(RefCell::new(State {
             quitting: false,
             windows: HashSet::new(),
@@ -73,7 +106,9 @@ impl Application {
     /// Initialize the app. At the moment, this is mostly needed for hi-dpi.
     // TODO: Report back an error instead of panicking
     #[allow(clippy::unnecessary_wraps)]
-    fn init() -> Result<(), Error> {
+    fn init(native_config: NativeApplicationConfig) -> Result<(), Error> {
+        let win_proc_dispatch = native_config.win_proc_dispatch;
+
         util::attach_console();
         if let Some(func) = OPTIONAL_FUNCTIONS.SetProcessDpiAwarenessContext {
             // This function is only supported on windows 10
@@ -94,7 +129,7 @@ impl Application {
                 let icon = LoadIconW(0 as HINSTANCE, IDI_APPLICATION);
                 let wnd = WNDCLASSW {
                     style: 0,
-                    lpfnWndProc: Some(window::win_proc_dispatch),
+                    lpfnWndProc: Some(win_proc_dispatch),
                     cbClsExtra: 0,
                     cbWndExtra: 0,
                     hInstance: 0 as HINSTANCE,
